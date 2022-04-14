@@ -117,7 +117,7 @@ class SplitNN(nn.Module):
 
 # %%
 print(f'number of shared features: {len(shared_columns)}')
-print(f'number of individual features: {len(ind_columns)}')
+# print(f'number of individual features: {len(ind_columns)}')
 shared_model = SplitNN([len(shared_columns), 96, 96, 1])
 shared_opt = torch.optim.SGD(shared_model.parameters(), lr=0.03, momentum=0.9)
 # ind_opt = torch.optim.SGD(ind_model.parameters(), lr=0.001, momentum=0.9)
