@@ -1,5 +1,5 @@
 # flower
-data: https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud
+data: https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud - should be saved in data/creditcard.csv
 
 ```
 python server.py
