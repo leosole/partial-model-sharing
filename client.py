@@ -30,6 +30,7 @@ class FraudDataset(Dataset):
 
 def load_data(path, initial_split, train_split, test_split, columns, batch_size=128, label=30): # 'data/creditcard.csv', 2000, 3000, 1:30
     df = pd.read_csv(path)
+    df = df.sample(frac=1, random_state=13)
     x_train = df.iloc[initial_split:train_split, 0:label].values.astype(np.float32)
     y_train = df.iloc[initial_split:train_split, label].values.astype(np.float32)
     sc = StandardScaler()
@@ -39,17 +40,17 @@ def load_data(path, initial_split, train_split, test_split, columns, batch_size=
     y_test = df.iloc[train_split:test_split, label].values.astype(np.float32)
     trainset = FraudDataset(x_train, y_train)
     testset = FraudDataset(x_test, y_test)
-    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True)
+    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=False)
     testloader = DataLoader(testset, batch_size=batch_size)
     num_examples = {'trainset' : len(trainset), 'testset' : len(testset)}
     return trainloader, testloader, num_examples
 
 # %%
 client1_args = {
-    'train_split': 100000, 'initial_split': 0, 'test_split': 120000, 'batch_size': 128, 'label': 30, 'columns': [*range(1,25)]
+    'train_split': 110000, 'initial_split': 0, 'test_split': 140000, 'batch_size': 128, 'label': 30, 'columns': [*range(1,22)]
 }
 client2_args = {
-    'train_split': 220000, 'initial_split': 120000, 'test_split': 240000, 'batch_size': 128, 'label': 30, 'columns': [*range(5,30)]
+    'train_split': 250000, 'initial_split': 140000, 'test_split': 284807, 'batch_size': 128, 'label': 30, 'columns': [*range(12,30)]
 }
 
 # %%
@@ -114,29 +115,32 @@ def test(shared_model, ind_model, agg_model, testloader):
                 tn += (not pred and not lab)
                 fn += (not pred and lab)
     f1_score = tp / (tp + (fp + fn)/2)
-    print(f'tp: {tp}, fp: {fp}, tn: {tn}, fn: {fn}')
-    print(f'F1 score: {f1_score} \t Loss: {loss}')  
+    print(f'TEST tp: {tp}, fp: {fp}, tn: {tn}, fn: {fn} | F1 score: {f1_score:.4f} \t Loss: {loss:.4f}')
     return loss, f1_score
 
-class SplitNN(nn.Module):
+class Net(nn.Module):
     def __init__(self, sizes) -> None:
-        super(SplitNN, self).__init__()
-        self.input_size = sizes[0]
-        self.output_size = sizes[-1]
-        self.lin1 = nn.Linear(sizes[0], sizes[1])
-        self.lin2 = nn.Linear(sizes[1], sizes[2])
+        super(Net, self).__init__()
+        self.last = sizes[-1]
+        modules = []
+        for i in range(len(sizes)-1):
+            modules.append(nn.Linear(sizes[i], sizes[i+1]))
+            if i < len(sizes)-2 or self.last > 1:
+                modules.append(nn.ReLU())
+            else:
+                modules.append(nn.Sigmoid())
+        self.sequential = nn.Sequential(*modules)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = F.relu(self.lin1(x))
-        x = F.relu(self.lin2(x))
-        return torch.sigmoid(x) if self.output_size == 1 else x
+        x = x.float()
+        return self.sequential(x)
 
 # %%
 print(f'number of shared features: {len(shared_columns)}')
 print(f'number of individual features: {len(ind_columns)}')
-shared_model = SplitNN([len(shared_columns), 96, 96])
-ind_model = SplitNN([len(ind_columns), 32, 32])
-agg_model = SplitNN([128, 128, 1])
+shared_model = Net([len(shared_columns), 64, 64, 8])
+ind_model = Net([len(ind_columns), 32, 32, 8])
+agg_model = Net([shared_model.last + ind_model.last, 64, 64, 1])
 # shared_opt = torch.optim.SGD(shared_model.parameters(), lr=0.001, momentum=0.9)
 # ind_opt = torch.optim.SGD(ind_model.parameters(), lr=0.001, momentum=0.9)
 # agg_opt = torch.optim.SGD(agg_model.parameters(), lr=0.001, momentum=0.9)
