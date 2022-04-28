@@ -124,14 +124,6 @@ class Net(nn.Module):
             else:
                 modules.append(nn.Sigmoid())
         self.sequential = nn.Sequential(*modules)
-        # self.sequential = nn.Sequential(
-        #     nn.Linear(sizes[0], sizes[1]),
-        #     nn.ReLU(),
-        #     nn.Linear(sizes[1], sizes[2]),
-        #     nn.ReLU(),
-        #     nn.Linear(sizes[2], sizes[3]),
-        #     nn.Sigmoid()
-        # )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x.float()
