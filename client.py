@@ -15,8 +15,15 @@ import pandas as pd
 
 import flwr as fl
 
+sys.path.append(".")
+import config
+
+if len(sys.argv) < 1:
+    print('Error: client number needed')
+    exit()
+    
 DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-#%%
+
 class FraudDataset(Dataset):
     def __init__(self, x, y):
         self.x = x
@@ -28,16 +35,16 @@ class FraudDataset(Dataset):
     def __len__(self):
         return len(self.x)
 
-def load_data(path, initial_split, train_split, test_split, columns, batch_size=128, label=30): # 'data/creditcard.csv', 2000, 3000, 1:30
+def load_data(path, initial_split, train_split, test_split, initial_test, columns, batch_size=128, label=30): # 'data/creditcard.csv', 2000, 3000, 1:30
     df = pd.read_csv(path)
-    df = df.sample(frac=1, random_state=13)
+    df = df.sample(frac=1, random_state=config.random)
     x_train = df.iloc[initial_split:train_split, 0:label].values.astype(np.float32)
     y_train = df.iloc[initial_split:train_split, label].values.astype(np.float32)
     sc = StandardScaler()
     x_train = sc.fit_transform(x_train)
-    x_test = df.iloc[train_split:test_split, 0:label].values.astype(np.float32)
+    x_test = df.iloc[initial_test:test_split, 0:label].values.astype(np.float32)
     x_test = sc.transform(x_test)
-    y_test = df.iloc[train_split:test_split, label].values.astype(np.float32)
+    y_test = df.iloc[initial_test:test_split, label].values.astype(np.float32)
     trainset = FraudDataset(x_train, y_train)
     testset = FraudDataset(x_test, y_test)
     trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=False)
@@ -45,29 +52,16 @@ def load_data(path, initial_split, train_split, test_split, columns, batch_size=
     num_examples = {'trainset' : len(trainset), 'testset' : len(testset)}
     return trainloader, testloader, num_examples
 
-# %%
-client1_args = {
-    'train_split': 110000, 'initial_split': 0, 'test_split': 140000, 'batch_size': 128, 'label': 30, 'columns': [*range(1,22)]
-}
-client2_args = {
-    'train_split': 250000, 'initial_split': 140000, 'test_split': 284807, 'batch_size': 128, 'label': 30, 'columns': [*range(12,30)]
-}
-
-# %%
-# trainloader, testloader, num_examples = load_data('data/creditcard.csv', **client1_args)
-shared_columns = [col for col in client1_args['columns'] if col in client2_args['columns']]
-# ind_columns = [col for col in client1_args['columns'] if col not in shared_columns]
+shared_columns = [col for col in config.client1['columns'] if col in config.client2['columns']]
 
 if sys.argv[1] == '1':
-    trainloader, testloader, num_examples = load_data('data/creditcard.csv', **client1_args)
-    ind_columns = [col for col in client1_args['columns'] if col not in shared_columns]
+    trainloader, testloader, num_examples = load_data('data/creditcard.csv', **config.client1)
+    ind_columns = [col for col in config.client1['columns'] if col not in shared_columns]
 
 if sys.argv[1] == '2':
-    trainloader, testloader, num_examples = load_data('data/creditcard.csv', **client2_args)
-    ind_columns = [col for col in client2_args['columns'] if col not in shared_columns]
-# %%
+    trainloader, testloader, num_examples = load_data('data/creditcard.csv', **config.client2)
+    ind_columns = [col for col in config.client2['columns'] if col not in shared_columns]
 
-# def train(shared_model, ind_model, agg_model, shared_opt, ind_opt, agg_opt, trainloader, epochs):
 def train(shared_model, ind_model, agg_model, trainloader, epochs):
     criterion = nn.BCELoss()
     shared_opt = torch.optim.SGD(shared_model.parameters(), lr=0.03)
@@ -135,16 +129,12 @@ class Net(nn.Module):
         x = x.float()
         return self.sequential(x)
 
-# %%
 print(f'number of shared features: {len(shared_columns)}')
 print(f'number of individual features: {len(ind_columns)}')
-shared_model = Net([len(shared_columns), 64, 64, 8])
-ind_model = Net([len(ind_columns), 32, 32, 8])
-agg_model = Net([shared_model.last + ind_model.last, 64, 64, 1])
-# shared_opt = torch.optim.SGD(shared_model.parameters(), lr=0.001, momentum=0.9)
-# ind_opt = torch.optim.SGD(ind_model.parameters(), lr=0.001, momentum=0.9)
-# agg_opt = torch.optim.SGD(agg_model.parameters(), lr=0.001, momentum=0.9)
-# %%
+shared_model = Net([len(shared_columns), *config.shared_layers])
+ind_model = Net([len(ind_columns), *config.ind_layers])
+agg_model = Net([shared_model.last + ind_model.last, *config.agg_layers])
+
 class FraudClient(fl.client.NumPyClient):
     def get_parameters(self):
         return [val.cpu().numpy() for _, val in shared_model.state_dict().items()]
@@ -154,13 +144,12 @@ class FraudClient(fl.client.NumPyClient):
         state_dict = OrderedDict({k: torch.tensor(v) for k, v in params_dict})
         shared_model.load_state_dict(state_dict, strict=True)
 
-    def fit(self, parameters, config):
+    def fit(self, parameters, configuration):
         self.set_parameters(parameters)
-        # train(shared_model, ind_model, agg_model, shared_opt, ind_opt, agg_opt, trainloader, epochs=2)
-        train(shared_model, ind_model, agg_model, trainloader, epochs=1)
+        train(shared_model, ind_model, agg_model, trainloader, epochs=config.epochs)
         return self.get_parameters(), num_examples['trainset'], {}
 
-    def evaluate(self, parameters, config):
+    def evaluate(self, parameters, configuration):
         self.set_parameters(parameters)
         loss, f1_score = test(shared_model, ind_model, agg_model, testloader)
         return float(loss), num_examples['testset'], {'f1_score': float(f1_score)}
