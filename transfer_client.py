@@ -111,6 +111,7 @@ class Net(nn.Module):
     def __init__(self, sizes) -> None:
         super(Net, self).__init__()
         self.last = sizes[-1]
+        self.sizes = sizes
         modules = []
         for i in range(len(sizes)-1):
             modules.append(nn.Linear(sizes[i], sizes[i+1]))
@@ -168,7 +169,7 @@ shared_model.sequential = shared_model.sequential[0:-2]
 for param in shared_model.parameters(): # Freeze the shared model parameters
    param.requires_grad = False
 ind_model = Net([len(ind_columns), *config.ind_layers])
-agg_model = Net([shared_model.last + ind_model.last, *config.agg_layers])
+agg_model = Net([shared_model.sizes[-2] + ind_model.last, *config.agg_layers])
 splitNN = SplitNN({'ind_model': ind_model, 'shared_model': shared_model, 'agg_model': agg_model})
 
 split_opt = torch.optim.SGD(splitNN.parameters(), lr=0.005, momentum=0.9)
