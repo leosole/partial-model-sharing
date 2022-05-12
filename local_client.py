@@ -18,7 +18,7 @@ import flwr as fl
 sys.path.append(".")
 import config
 
-if len(sys.argv) < 1:
+if len(sys.argv) < 2:
     print('Error: client number needed')
     exit()
 
@@ -61,8 +61,9 @@ if sys.argv[1] == '2':
 
 def train(model, trainloader, epochs):
     criterion = nn.BCELoss()
-    opt = torch.optim.SGD(model.parameters(), lr=0.03)
+    opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=config.weight_decay)
     for _ in range(epochs):
+        tp, fp, tn, fn = 0, 0, 0, 0
         for x, y in trainloader:
             x, y = x.to(DEVICE), y.to(DEVICE)
             opt.zero_grad()
@@ -71,6 +72,15 @@ def train(model, trainloader, epochs):
             loss = criterion(outputs, y)
             loss.backward()
             opt.step()
+            preds = np.round_(outputs.detach().numpy())
+            for lab, pred in zip(y, preds):
+                # Collect statistics
+                tp += (pred and lab)
+                fp += (pred and not lab)
+                tn += (not pred and not lab)
+                fn += (not pred and lab)
+        f1_score = tp / (tp + (fp + fn)/2)
+        print(f'\rTRAIN tp: {tp}, fp: {fp}, tn: {tn}, fn: {fn} | F1 score: {f1_score:.4f} \t Loss: {loss:.4f}', end='')
 
 def test(model, testloader):
     criterion = nn.BCELoss()
@@ -103,6 +113,7 @@ class Net(nn.Module):
             modules.append(nn.Linear(sizes[i], sizes[i+1]))
             if i < len(sizes)-2 or self.last > 1:
                 modules.append(nn.ReLU())
+                modules.append(nn.Dropout(config.dropout))
             else:
                 modules.append(nn.Sigmoid())
         self.sequential = nn.Sequential(*modules)
@@ -114,5 +125,6 @@ class Net(nn.Module):
 model = Net([len(columns), *config.local_layers])
 print('begin training')
 train(model, trainloader, config.rounds)
+print()
 test(model, testloader)
 print('Client DONE!')

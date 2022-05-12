@@ -28,11 +28,11 @@ class FraudDataset(Dataset):
 def load_data(path, initial_split, train_split, test_split, batch_size=128, label=30): # 'data/creditcard.csv', 2000, 3000, 1:30
     df = pd.read_csv(path)
     df = df.sample(frac=1, random_state=config.random)
-    x_train = df.iloc[initial_split:train_split, 1:label].values.astype(np.float32)
+    x_train = df.iloc[initial_split:train_split, 0:label].values.astype(np.float32)
     y_train = df.iloc[initial_split:train_split, label].values.astype(np.float32)
     sc = StandardScaler()
     x_train = sc.fit_transform(x_train)
-    x_test = df.iloc[train_split:test_split, 1:label].values.astype(np.float32)
+    x_test = df.iloc[train_split:test_split, 0:label].values.astype(np.float32)
     x_test = sc.transform(x_test)
     y_test = df.iloc[train_split:test_split, label].values.astype(np.float32)
     trainset = FraudDataset(x_train, y_train)
@@ -43,8 +43,9 @@ def load_data(path, initial_split, train_split, test_split, batch_size=128, labe
 
 def train(model, trainloader, epochs):
     criterion = nn.BCELoss()
-    opt = torch.optim.SGD(model.parameters(), lr=0.03)
+    opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=config.weight_decay)
     for _ in range(epochs):
+        tp, fp, tn, fn = 0, 0, 0, 0
         for x, y in trainloader:
             x, y = x.to(DEVICE), y.to(DEVICE)
             opt.zero_grad()
@@ -53,6 +54,15 @@ def train(model, trainloader, epochs):
             loss = criterion(outputs, y)
             loss.backward()
             opt.step()
+            preds = np.round_(outputs.detach().numpy())
+            for lab, pred in zip(y, preds):
+                # Collect statistics
+                tp += (pred and lab)
+                fp += (pred and not lab)
+                tn += (not pred and not lab)
+                fn += (not pred and lab)
+        f1_score = tp / (tp + (fp + fn)/2)
+        print(f'\rTRAIN tp: {tp}, fp: {fp}, tn: {tn}, fn: {fn} | F1 score: {f1_score:.4f} \t Loss: {loss:.4f}', end='')
 
 def test(model, testloader):
     criterion = nn.BCELoss()
@@ -85,6 +95,7 @@ class Net(nn.Module):
             modules.append(nn.Linear(sizes[i], sizes[i+1]))
             if i < len(sizes)-2 or self.last > 1:
                 modules.append(nn.ReLU())
+                modules.append(nn.Dropout(config.dropout))
             else:
                 modules.append(nn.Sigmoid())
         self.sequential = nn.Sequential(*modules)
@@ -98,5 +109,6 @@ trainloader, testloader = load_data('data/creditcard.csv', **config.server)
 model = Net(config.server_layers)
 print('begin training')
 train(model, trainloader, config.rounds)
+print()
 test(model, testloader)
 print('Client DONE!')

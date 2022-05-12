@@ -9,7 +9,6 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import f1_score
 import numpy as np
 import pandas as pd
 
@@ -18,7 +17,7 @@ import flwr as fl
 sys.path.append(".")
 import config
 
-if len(sys.argv) < 1:
+if len(sys.argv) < 2:
     print('Error: client number needed')
     exit()
     
@@ -68,6 +67,7 @@ def train(shared_model, ind_model, agg_model, trainloader, epochs):
     ind_opt = torch.optim.SGD(ind_model.parameters(), lr=0.03)
     agg_opt = torch.optim.SGD(agg_model.parameters(), lr=0.03)
     for _ in range(epochs):
+        tp, fp, tn, fn = 0, 0, 0, 0
         for x, y in trainloader:
             x, y = x.to(DEVICE), y.to(DEVICE)
             shared_opt.zero_grad()
@@ -87,6 +87,15 @@ def train(shared_model, ind_model, agg_model, trainloader, epochs):
             shared_opt.step()
             ind_opt.step()
             agg_opt.step()
+            preds = np.round_(outputs.detach().numpy())
+            for lab, pred in zip(y, preds):
+                # Collect statistics
+                tp += (pred and lab)
+                fp += (pred and not lab)
+                tn += (not pred and not lab)
+                fn += (not pred and lab)
+        f1_score = tp / (tp + (fp + fn)/2)
+        print(f'TRAIN tp: {tp}, fp: {fp}, tn: {tn}, fn: {fn} | F1 score: {f1_score:.4f} \t Loss: {loss:.4f}')
 
 def test(shared_model, ind_model, agg_model, testloader):
     criterion = nn.BCELoss()
@@ -156,4 +165,4 @@ class FraudClient(fl.client.NumPyClient):
 
 fl.client.start_numpy_client('[::]:8080', client=FraudClient())
 
-print('Client DONE!')
+print(f'Client {sys.argv[1]} DONE!')

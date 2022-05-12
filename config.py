@@ -1,17 +1,21 @@
+batch_size = 2048
 client1 = {
-    'train_split': 110000, 'initial_split': 0, 'initial_test': 220000, 'test_split': 284807, 'batch_size': 128, 'label': 30, 'columns': [*range(1,22)]
+    'train_split': 100000, 'initial_split': 0, 'initial_test': 200000, 'test_split': 284807, 'batch_size': batch_size, 'label': 30, 'columns': [0, 1, 4, 6, 7, 8, 12, 13, 14, 15, 16, 17, 19, 22, 23, 24, 25, 26, 27, 28, 29],
 }
 client2 = {
-    'train_split': 220000, 'initial_split': 110000, 'initial_test': 220000, 'test_split': 284807, 'batch_size': 128, 'label': 30, 'columns': [*range(12,30)]
+    'train_split': 200000, 'initial_split': 100000, 'initial_test': 200000, 'test_split': 284807, 'batch_size': batch_size, 'label': 30, 'columns': [0, 2, 3, 5, 8, 9, 10, 11, 13, 14, 15, 18, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]
 }
 server = {
-    'train_split': 220000, 'initial_split': 0, 'test_split': 284807, 'batch_size': 128, 'label': 30
+    'train_split': 200000, 'initial_split': 0, 'test_split': 284807, 'batch_size': batch_size, 'label': 30
 }
-shared_layers = [64, 64, 8]
-ind_layers = [32, 32, 8]
-agg_layers = [64, 64, 1]
-local_layers = [96, 96, 64, 64, 1]
-server_layers = [29, 96, 96, 64, 64, 1]
-rounds = 50
+shared_layers = [128, 128, 128]
+ind_layers = [128, 128, 128]
+agg_layers = [128, 128, 1]
+local_layers = [352, 352, 352, 1]
+server_layers = [30, 352, 352, 352, 1]
+dropout = 0.3
+weight_decay=0
+rounds = 70
 epochs = 1
-random = 13
+random = 2
+freeze = False

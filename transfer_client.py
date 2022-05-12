@@ -16,7 +16,7 @@ import flwr as fl
 sys.path.append(".")
 import config
 
-if len(sys.argv) < 1:
+if len(sys.argv) < 2:
     print('Error: client number needed')
     exit()
     
@@ -65,8 +65,8 @@ if sys.argv[1] == '2':
 def fed_train(shared_model, shared_opt, trainloader, epochs):
     criterion = nn.BCELoss()
     loss = 0.0
-    tp, fp, tn, fn = 0, 0, 0, 0
     for _ in range(epochs):
+        tp, fp, tn, fn = 0, 0, 0, 0
         for x, y in trainloader:
             x, y = x.to(DEVICE), y.to(DEVICE)
             shared_opt.zero_grad()
@@ -82,8 +82,8 @@ def fed_train(shared_model, shared_opt, trainloader, epochs):
                 fp += (pred and not lab)
                 tn += (not pred and not lab)
                 fn += (not pred and lab)
-    # f1_score = tp / (tp + (fp + fn)/2)
-    # print(f'TRAIN tp: {tp}, fp: {fp}, tn: {tn}, fn: {fn} | F1 score: {f1_score:.4f} \t Loss: {loss:.4f}')
+        f1_score = tp / (tp + (fp + fn)/2)
+        print(f'TRAIN tp: {tp}, fp: {fp}, tn: {tn}, fn: {fn} | F1 score: {f1_score:.4f} \t Loss: {loss:.4f}')
 
 def fed_test(shared_model, testloader):
     criterion = nn.BCELoss()
@@ -166,8 +166,9 @@ fl.client.start_numpy_client('[::]:8080', client=FraudClient())
 
 # Transfer learning
 shared_model.sequential = shared_model.sequential[0:-2]
-for param in shared_model.parameters(): # Freeze the shared model parameters
-   param.requires_grad = False
+if config.freeze:
+    for param in shared_model.parameters(): # Freeze the shared model parameters
+        param.requires_grad = False
 ind_model = Net([len(ind_columns), *config.ind_layers])
 agg_model = Net([shared_model.sizes[-2] + ind_model.last, *config.agg_layers])
 splitNN = SplitNN({'ind_model': ind_model, 'shared_model': shared_model, 'agg_model': agg_model})
@@ -187,6 +188,16 @@ def train(splitNN, opts, trainloader, epochs):
             loss = criterion(outputs, y)
             loss.backward()
             opts.step()
+            preds = np.round_(outputs.detach().numpy())
+            for lab, pred in zip(y, preds):
+                # Collect statistics
+                tp += (pred and lab)
+                fp += (pred and not lab)
+                tn += (not pred and not lab)
+                fn += (not pred and lab)
+        f1_score = tp / (tp + (fp + fn)/2)
+        print(f'\rTRAIN tp: {tp}, fp: {fp}, tn: {tn}, fn: {fn} | F1 score: {f1_score:.4f} \t Loss: {loss:.4f}', end='')
+
 
 def test(splitNN, testloader):
     criterion = nn.BCELoss()
@@ -209,7 +220,8 @@ def test(splitNN, testloader):
     f1_score = tp / (tp + (fp + fn)/2)
     print(f'TEST tp: {tp}, fp: {fp}, tn: {tn}, fn: {fn} | F1 score: {f1_score:.4f} \t Loss: {loss:.4f}')
     return loss, f1_score
-
+print('starting local training')
 train(splitNN, split_opt, trainloader, epochs=config.rounds)
+print()
 test(splitNN, testloader)
-print('Client DONE!')
+print(f'Client {sys.argv[1]} DONE!')
