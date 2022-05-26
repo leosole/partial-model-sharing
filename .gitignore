@@ -1,4 +1,7 @@
 data/
 test.py
-config.cpython-39.pyc
 results/
+*.cpython-39.pyc
+*.txt
+*.pt
+*.png
