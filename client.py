@@ -63,9 +63,9 @@ if sys.argv[1] == '2':
 
 def train(shared_model, ind_model, agg_model, trainloader, epochs):
     criterion = nn.BCELoss()
-    shared_opt = torch.optim.SGD(shared_model.parameters(), lr=0.03)
-    ind_opt = torch.optim.SGD(ind_model.parameters(), lr=0.03)
-    agg_opt = torch.optim.SGD(agg_model.parameters(), lr=0.03)
+    shared_opt = torch.optim.Adam(shared_model.parameters(), lr=1e-3, weight_decay=config.weight_decay)
+    ind_opt = torch.optim.Adam(ind_model.parameters(), lr=1e-3, weight_decay=config.weight_decay)
+    agg_opt = torch.optim.Adam(agg_model.parameters(), lr=1e-3, weight_decay=config.weight_decay)
     for _ in range(epochs):
         tp, fp, tn, fn = 0, 0, 0, 0
         for x, y in trainloader:
@@ -95,7 +95,7 @@ def train(shared_model, ind_model, agg_model, trainloader, epochs):
                 tn += (not pred and not lab)
                 fn += (not pred and lab)
         f1_score = tp / (tp + (fp + fn)/2)
-        print(f'TRAIN tp: {tp}, fp: {fp}, tn: {tn}, fn: {fn} | F1 score: {f1_score:.4f} \t Loss: {loss:.4f}')
+        print(f'\rTRAIN tp: {tp}, fp: {fp}, tn: {tn}, fn: {fn} | F1 score: {f1_score:.4f} \t Loss: {loss:.4f}', end='')
 
 def test(shared_model, ind_model, agg_model, testloader):
     criterion = nn.BCELoss()
@@ -118,7 +118,8 @@ def test(shared_model, ind_model, agg_model, testloader):
                 tn += (not pred and not lab)
                 fn += (not pred and lab)
     f1_score = tp / (tp + (fp + fn)/2)
-    print(f'TEST tp: {tp}, fp: {fp}, tn: {tn}, fn: {fn} | F1 score: {f1_score:.4f} \t Loss: {loss:.4f}')
+    if print_test:
+        print(f'TEST tp: {tp}, fp: {fp}, tn: {tn}, fn: {fn} | F1 score: {f1_score:.4f} \t Loss: {loss:.4f}')
     return loss, f1_score
 
 class Net(nn.Module):
@@ -130,6 +131,7 @@ class Net(nn.Module):
             modules.append(nn.Linear(sizes[i], sizes[i+1]))
             if i < len(sizes)-2 or self.last > 1:
                 modules.append(nn.ReLU())
+                modules.append(nn.Dropout(config.dropout))
             else:
                 modules.append(nn.Sigmoid())
         self.sequential = nn.Sequential(*modules)
@@ -162,7 +164,8 @@ class FraudClient(fl.client.NumPyClient):
         self.set_parameters(parameters)
         loss, f1_score = test(shared_model, ind_model, agg_model, testloader)
         return float(loss), num_examples['testset'], {'f1_score': float(f1_score)}
-
+print_test = False
 fl.client.start_numpy_client('[::]:8080', client=FraudClient())
-
+print_test = True
+test(shared_model, ind_model, agg_model, testloader)
 print(f'Client {sys.argv[1]} DONE!')

@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 from sklearn.preprocessing import StandardScaler
+from imblearn.over_sampling import SMOTE
 from sklearn.metrics import f1_score
 import numpy as np
 import pandas as pd
@@ -16,7 +17,11 @@ import pandas as pd
 import flwr as fl
 
 sys.path.append(".")
-import config
+from importlib import import_module
+if len(sys.argv) > 2:
+    config = import_module(sys.argv[2])
+else: 
+    import config
 
 if len(sys.argv) < 2:
     print('Error: client number needed')
@@ -35,16 +40,18 @@ class FraudDataset(Dataset):
     def __len__(self):
         return len(self.x)
 
-def load_data(path, initial_split, train_split, test_split, initial_test, columns, batch_size=128, label=30): # 'data/creditcard.csv', 2000, 3000, 1:30
+def load_data(path, initial_split, train_split, test_split, initial_test, columns, batch_size=128): 
     df = pd.read_csv(path)
     df = df.sample(frac=1, random_state=config.random)
-    x_train = df.iloc[initial_split:train_split, 0:label].values.astype(np.float32)
-    y_train = df.iloc[initial_split:train_split, label].values.astype(np.float32)
+    x_train = df.iloc[initial_split:train_split, columns].values.astype(np.float32)
+    y_train = df.iloc[initial_split:train_split, -1].values.astype(np.float32)
     sc = StandardScaler()
     x_train = sc.fit_transform(x_train)
-    x_test = df.iloc[initial_test:test_split, 0:label].values.astype(np.float32)
+    if config.resample:
+        x_train, y_train = SMOTE(random_state=config.random).fit_resample(x_train, y_train)
+    x_test = df.iloc[initial_test:test_split, columns].values.astype(np.float32)
     x_test = sc.transform(x_test)
-    y_test = df.iloc[initial_test:test_split, label].values.astype(np.float32)
+    y_test = df.iloc[initial_test:test_split, -1].values.astype(np.float32)
     trainset = FraudDataset(x_train, y_train)
     testset = FraudDataset(x_test, y_test)
     trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=False)
@@ -52,11 +59,11 @@ def load_data(path, initial_split, train_split, test_split, initial_test, column
     return trainloader, testloader
 
 if sys.argv[1] == '1':
-    trainloader, testloader = load_data('data/creditcard.csv', **config.client1)
+    trainloader, testloader = load_data(config.path, **config.client1)
     columns = config.client1['columns']
 
 if sys.argv[1] == '2':
-    trainloader, testloader = load_data('data/creditcard.csv', **config.client2)
+    trainloader, testloader = load_data(config.path, **config.client2)
     columns = config.client2['columns']
 
 def train(model, trainloader, epochs):
@@ -67,7 +74,7 @@ def train(model, trainloader, epochs):
         for x, y in trainloader:
             x, y = x.to(DEVICE), y.to(DEVICE)
             opt.zero_grad()
-            outputs = model(x[:,columns])
+            outputs = model(x)
             outputs = outputs.view(-1)
             loss = criterion(outputs, y)
             loss.backward()
@@ -80,16 +87,17 @@ def train(model, trainloader, epochs):
                 tn += (not pred and not lab)
                 fn += (not pred and lab)
         f1_score = tp / (tp + (fp + fn)/2)
-        print(f'\rTRAIN tp: {tp}, fp: {fp}, tn: {tn}, fn: {fn} | F1 score: {f1_score:.4f} \t Loss: {loss:.4f}', end='')
+        print(f'\rTRAIN tp: {int(tp)}, fp: {int(fp)}, tn: {int(tn)}, fn: {int(fn)} | F1 score: {f1_score:.4f} \t Loss: {loss:.4f}', end='')
 
 def test(model, testloader):
     criterion = nn.BCELoss()
     loss = 0.0
     tp, fp, tn, fn = 0, 0, 0, 0
+    model.eval()
     with torch.no_grad():
         for x, y in testloader:
             x, y = x.to(DEVICE), y.to(DEVICE)
-            outputs = model(x[:,columns])
+            outputs = model(x)
             outputs = outputs.view(-1)
             loss += criterion(outputs, y).item()
 
@@ -121,10 +129,21 @@ class Net(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x.float()
         return self.sequential(x)
+    
+    def predict(self, x):
+        pred = torch.F.softmax(self.forward(x))
+        return torch.tensor(pred)
 
 model = Net([len(columns), *config.local_layers])
 print('begin training')
 train(model, trainloader, config.rounds)
 print()
-test(model, testloader)
+_, f1_score = test(model, testloader)
 print('Client DONE!')
+shared_columns = [col for col in config.client1['columns'] if col in config.client2['columns']]
+if len(sys.argv) > 2:
+    with open(f'results/local_client_{sys.argv[1]}-{sys.argv[2]}-{len(shared_columns)}.txt', 'a') as f:
+        f.write(f'{f1_score}\n')
+else:
+    with open(f'results/local_client_{sys.argv[1]}.txt', 'a') as f:
+        f.write(f'{f1_score}\n')
