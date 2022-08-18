@@ -1,0 +1,16 @@
+flwr==1.0.0
+imbalanced_learn==0.9.1
+imblearn==0.0
+ipython==8.4.0
+matplotlib==3.5.2
+numpy==1.22.0
+pandas==1.4.2
+scikit_learn==1.1.2
+seaborn==0.11.2
+tensorflow==2.9.1
+tensorflow_addons==0.17.1
+tensorflow_datasets==4.6.0
+tensorflow_macos==2.9.2
+torch==1.12.1
+torchrecorder==1.0.2
+tqdm==4.64.0
