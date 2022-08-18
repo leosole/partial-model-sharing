@@ -7,9 +7,11 @@ from glob import glob
 #%%
 data = {}
 dataset = 'ieee'
-shared = 200
-total_col = 324
-sim_num = 7
+complement = '-CIS'
+shared = 242
+total_col = 322
+sim_num = 10
+metric = 'F1-Score'
 if shared:
     for file in glob(f'results/tf*{dataset}*{shared}*.txt'):
         with open(file, 'r') as f:
@@ -59,13 +61,15 @@ order = ['local 1', 'local 2', 'transfer 1', 'transfer 2', 'partial 1', 'partial
 df = df[order]
 sns.pointplot(data=df, join=False, palette="Paired", ci='sd', ax=ax1)
 ax1.set_xticklabels(ax1.get_xticklabels(),rotation=90)
-ax1.set_ylabel('F1 score')
+ax1.set_ylabel(metric)
 ax2 = ax1.secondary_yaxis('right', functions=(normalize, denormalize))
-ax2.set_ylabel('Normalized F1 score')
-ax1.set_title(f'{dataset.upper()} Dataset ({100*shared/total_col:.0f}% shared columns)')
+ax2.set_ylabel(f'Normalized {metric}')
+dataset += complement
+ax1.set_title(f'{dataset.upper()} Dataset ({100*shared/total_col:.0f}% common variables)')
 labels = []
 for label, mean in zip(df.columns, df.mean()):
-    labels.append(label + f':  {mean:.3f}')
+    spaces = max([len(x) for x in df.columns]) - len(label)
+    labels.append(label + f':{" "*spaces} {mean:.3f} | {normalize(mean):.3f}')
     print(mean)
-plt.legend(labels=labels, edgecolor=(1,1,1,0), borderpad=0.8)
+plt.legend(labels=labels, edgecolor=(1,1,1,0), borderpad=0.8, prop={'family': 'monospace', 'size': 18})
 # %%

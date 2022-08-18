@@ -2,7 +2,6 @@ data/
 test.py
 results/
 *.cpython-39.pyc
-*.txt
 *.pt
 *.png
 *.ipynb
